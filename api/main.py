@@ -13,7 +13,7 @@ from repositories.json_repository import DeploymentHistoryRepository, JsonIncide
 from repositories.code_repository import GithubCodeRepository, JsonCodeRepository
 from services.advisor import IncidentAdvisor
 from services.incident_management import IncidentManagementService
-from services.ollama import OllamaClient
+from services.azure_openai import AzureOpenAIClient
 from vector.in_memory_store import InMemoryIncidentVectorStore
 
 @asynccontextmanager
@@ -21,12 +21,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = Settings.from_environment()
     repository = JsonIncidentRepository(settings.data_directory)
     incidents = repository.load_historical_incidents()
-    ollama = OllamaClient(
-        settings.ollama_base_url,
-        settings.ollama_embedding_model,
-        settings.ollama_chat_model,
+    azure_openai = AzureOpenAIClient(
+        endpoint=settings.azure_openai_endpoint,
+        api_key=settings.azure_openai_api_key,
+        api_version=settings.azure_openai_api_version,
+        embedding_deployment=settings.azure_openai_embedding_deployment,
+        chat_deployment=settings.azure_openai_chat_deployment,
     )
-    vector_store = await InMemoryIncidentVectorStore.build(incidents, ollama)
+    vector_store = await InMemoryIncidentVectorStore.build(incidents, azure_openai)
     code_repository = (
         GithubCodeRepository(settings.github_repository, settings.github_token)
         if settings.github_repository and settings.github_token
@@ -34,7 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.incident_service = IncidentManagementService(
         vector_store=vector_store,
-        advisor=IncidentAdvisor(ollama),
+        advisor=IncidentAdvisor(azure_openai),
         deployment_agent=DeploymentCheckAgent(
             DeploymentHistoryRepository(settings.data_directory)
         ),

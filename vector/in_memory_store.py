@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from math import sqrt
 from domain.models import Incident, SimilarIncident
-from services.ollama import OllamaClient
+from services.azure_openai import AzureOpenAIClient
 
 @dataclass(frozen=True, slots=True)
 class VectorizedIncident:
@@ -10,14 +10,14 @@ class VectorizedIncident:
     vector: list[float]
 
 class InMemoryIncidentVectorStore:
-    def __init__(self, ollama: OllamaClient, entries: list[VectorizedIncident]) -> None:
-        self._ollama, self._entries = ollama, entries
+    def __init__(self, client: AzureOpenAIClient, entries: list[VectorizedIncident]) -> None:
+        self._client, self._entries = client, entries
     @classmethod
-    async def build(cls, incidents: list[Incident], ollama: OllamaClient) -> "InMemoryIncidentVectorStore":
-        entries = [VectorizedIncident(incident, await ollama.embed(incident.searchable_text())) for incident in incidents]
-        return cls(ollama, entries)
+    async def build(cls, incidents: list[Incident], client: AzureOpenAIClient) -> "InMemoryIncidentVectorStore":
+        entries = [VectorizedIncident(incident, await client.embed(incident.searchable_text())) for incident in incidents]
+        return cls(client, entries)
     async def search(self, incident: Incident, limit: int) -> list[SimilarIncident]:
-        query_vector = await self._ollama.embed(incident.searchable_text())
+        query_vector = await self._client.embed(incident.searchable_text())
         matches = [SimilarIncident(incident=entry.incident, similarity=cosine_similarity(query_vector, entry.vector)) for entry in self._entries]
         return sorted(matches, key=lambda match: match.similarity, reverse=True)[:limit]
     @property

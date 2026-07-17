@@ -4,6 +4,7 @@ from agents.code_investigation import CodeInvestigationAgent, extract_error
 from core.config import PROJECT_ROOT
 from repositories.code_repository import JsonCodeRepository
 from services.incident_management import IncidentManagementService
+from services.azure_openai import AzureOpenAIClient
 from vector.in_memory_store import cosine_similarity
 
 def incident(service: str = "checkout-api") -> Incident:
@@ -42,3 +43,22 @@ def test_code_agent_finds_simulated_source_for_log_error() -> None:
     )
     assert result.status == "CODE_EVIDENCE_FOUND"
     assert "reporting/jobs/report_export.py" in result.evidence
+
+async def test_azure_openai_client_parses_embedding_and_chat_responses() -> None:
+    client = AzureOpenAIClient(
+        endpoint="https://example.openai.azure.com",
+        api_key="test-key",
+        api_version="2024-10-21",
+        embedding_deployment="embedding-deployment",
+        chat_deployment="chat-deployment",
+    )
+
+    async def fake_request(path: str, _payload: dict, timeout: float) -> dict:
+        assert timeout in (90, 120)
+        if path.endswith("/embeddings"):
+            return {"data": [{"embedding": [0.1, 0.2]}]}
+        return {"choices": [{"message": {"content": "Investigate the release."}}]}
+
+    client._request = fake_request  # type: ignore[method-assign]
+    assert await client.embed("incident text") == [0.1, 0.2]
+    assert await client.generate("prompt") == "Investigate the release."

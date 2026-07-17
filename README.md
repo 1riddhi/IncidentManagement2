@@ -1,6 +1,6 @@
 # Incident Management API
 
-A FastAPI application that searches historical incidents using Ollama embeddings, gathers deployment and code evidence for weak matches, and uses an Ollama chat model to return bounded operational guidance.
+A FastAPI application that searches historical incidents using Azure OpenAI embeddings, gathers deployment and code evidence for weak matches, and uses Azure OpenAI chat completions to return bounded operational guidance.
 
 ## Request flow
 
@@ -17,19 +17,13 @@ A FastAPI application that searches historical incidents using Ollama embeddings
 - `core/` — configuration
 - `domain/` — request and response models
 - `repositories/` — JSON data and code-search adapters
-- `services/` — orchestration, Ollama client, and advisor
+- `services/` — orchestration, Azure OpenAI client, and advisor
 - `vector/` — in-memory embedding search
 - `data/` — compact sample incidents, logs, deployment history, and simulated GitHub code
 
 ## Prerequisites
 
-Run an Ollama server with a chat model and an embedding-capable model:
-
-```bash
-ollama pull nomic-embed-text
-ollama pull mistral
-ollama serve
-```
+Create an Azure OpenAI resource with one chat-model deployment and one embedding-model deployment. The deployment names, rather than base model names, are used by the API.
 
 ## Run
 
@@ -37,14 +31,20 @@ ollama serve
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
+export AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com"
+export AZURE_OPENAI_API_KEY="your-azure-openai-key"
+export AZURE_OPENAI_CHAT_DEPLOYMENT="your-chat-deployment"
+export AZURE_OPENAI_EMBEDDING_DEPLOYMENT="your-embedding-deployment"
 uvicorn api.main:app --reload
 ```
 
 Configuration is through environment variables:
 
-- `OLLAMA_BASE_URL` (default `http://localhost:11434`)
-- `OLLAMA_CHAT_MODEL` (default `mistral:latest`)
-- `OLLAMA_EMBEDDING_MODEL` (default `nomic-embed-text:latest`)
+- `AZURE_OPENAI_ENDPOINT` — required, for example `https://your-resource.openai.azure.com`
+- `AZURE_OPENAI_API_KEY` — required Azure OpenAI API key
+- `AZURE_OPENAI_API_VERSION` (default `2024-10-21`)
+- `AZURE_OPENAI_CHAT_DEPLOYMENT` (default `gpt-4o-mini`)
+- `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` (default `text-embedding-3-small`)
 - `SIMILARITY_THRESHOLD` (default `0.85`)
 - `DATA_DIRECTORY` (default `./data`)
 - `GITHUB_REPOSITORY` and `GITHUB_TOKEN` — optional. Set both to search your real `owner/repository` with GitHub's code-search API. Without them, the demo uses `data/simulated-github-code.json`.

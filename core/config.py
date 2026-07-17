@@ -7,9 +7,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    ollama_base_url: str
-    ollama_chat_model: str
-    ollama_embedding_model: str
+    azure_openai_endpoint: str
+    azure_openai_api_key: str
+    azure_openai_api_version: str
+    azure_openai_chat_deployment: str
+    azure_openai_embedding_deployment: str
     similarity_threshold: float
     data_directory: Path
     github_repository: str | None
@@ -18,11 +20,22 @@ class Settings:
     @classmethod
     def from_environment(cls) -> "Settings":
         return cls(
-            ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/"),
-            ollama_chat_model=os.getenv("OLLAMA_CHAT_MODEL", "mistral:latest"),
-            ollama_embedding_model=os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text:latest"),
+            azure_openai_endpoint=_required("AZURE_OPENAI_ENDPOINT").rstrip("/"),
+            azure_openai_api_key=_required("AZURE_OPENAI_API_KEY"),
+            azure_openai_api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21"),
+            azure_openai_chat_deployment=os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-5-mini"),
+            azure_openai_embedding_deployment=os.getenv(
+                "AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"
+            ),
             similarity_threshold=float(os.getenv("SIMILARITY_THRESHOLD", "0.85")),
             data_directory=Path(os.getenv("DATA_DIRECTORY", PROJECT_ROOT / "data")),
             github_repository=os.getenv("GITHUB_REPOSITORY"),
             github_token=os.getenv("GITHUB_TOKEN"),
         )
+
+
+def _required(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"{name} must be configured.")
+    return value
