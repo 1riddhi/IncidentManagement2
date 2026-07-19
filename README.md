@@ -57,7 +57,7 @@ To run the tests:
 ```bash
 pytest
 ```
-
+app runs on : http://127.0.0.1:8000/docs
 Update `data/historical-incidents.json` to add historical cases and `data/new-incident.json` to maintain sample incoming incidents.
 
 ## Banking demo fixtures
