@@ -64,7 +64,9 @@ export SERVICENOW_PASSWORD="your-pdi-admin-password"
 
 The application imports only `active=false` incidents and requests a restricted set of fields. Do not commit these credentials or use company production incident data without approval.
 
-After startup, inspect the imported historical records at `GET /api/v1/incidents/historical` (for example, `http://127.0.0.1:8000/api/v1/incidents/historical`). Active ServiceNow tickets are fetched on demand from `GET /api/v1/incidents/active`; they are intentionally excluded from the historical similarity index.
+`GET /api/v1/incidents/historical` fetches resolved/closed records from ServiceNow on demand (for example, `http://127.0.0.1:8000/api/v1/incidents/historical`). `GET /api/v1/incidents/active` likewise fetches active tickets on demand; active tickets are intentionally excluded from the historical similarity index.
+
+Both incident endpoints include nested attachment metadata (`id`, `fileName`, `contentType`, and `sizeBytes`) fetched from ServiceNow's `sys_attachment` table. `.txt` attachments additionally include a bounded UTF-8 `fileContent` string; other attachment types return `fileContent: null`.
 
 On Cloud Run, the API opens its port immediately and imports ServiceNow history/builds Azure embeddings in the background. Check `GET /health`: it returns `status: "starting"` while loading, `status: "ok"` when historical analysis is ready, or `status: "error"` with a diagnostic message if initialization fails. The active-incidents endpoint remains available while history is loading.
 

@@ -58,41 +58,41 @@ async def load_incident_service(request: Request) -> IncidentManagementService:
         settings: Settings = request.app.state.settings
         repository: ServiceNowIncidentRepository = request.app.state.servicenow_repository
         request.app.state.initialization_status = "starting"
-    try:
-        incidents = await asyncio.to_thread(repository.load_historical_incidents)
-        logger.info("Loaded %d resolved/closed incidents from ServiceNow into the historical index", len(incidents))
-        azure_openai = AzureOpenAIClient(
-            endpoint=settings.azure_openai_endpoint,
-            api_key=settings.azure_openai_api_key,
-            api_version=settings.azure_openai_api_version,
-            embedding_deployment=settings.azure_openai_embedding_deployment,
-            chat_deployment=settings.azure_openai_chat_deployment,
-        )
-        vector_store = await InMemoryIncidentVectorStore.build(incidents, azure_openai)
-        code_repository = (
-            GithubCodeRepository(settings.github_repository, settings.github_token)
-            if settings.github_repository and settings.github_token
-            else JsonCodeRepository(settings.data_directory)
-        )
-        service = IncidentManagementService(
-            vector_store=vector_store,
-            advisor=IncidentAdvisor(azure_openai),
-            deployment_agent=DeploymentCheckAgent(
-                DeploymentHistoryRepository(settings.data_directory)
-            ),
-            code_agent=CodeInvestigationAgent(code_repository),
-            similarity_threshold=settings.similarity_threshold,
-        )
-        request.app.state.incident_service = service
-        request.app.state.historical_incident_count = vector_store.count
-        request.app.state.initialization_status = "ok"
-        logger.info("Historical incident initialization completed")
-        return service
-    except Exception as error:
-        request.app.state.initialization_status = "error"
-        request.app.state.initialization_error = str(error)
-        logger.exception("Historical incident initialization failed")
-        raise HTTPException(status_code=503, detail=str(error)) from error
+        try:
+            incidents = await asyncio.to_thread(repository.load_historical_incidents)
+            logger.info("Loaded %d resolved/closed incidents from ServiceNow into the historical index", len(incidents))
+            azure_openai = AzureOpenAIClient(
+                endpoint=settings.azure_openai_endpoint,
+                api_key=settings.azure_openai_api_key,
+                api_version=settings.azure_openai_api_version,
+                embedding_deployment=settings.azure_openai_embedding_deployment,
+                chat_deployment=settings.azure_openai_chat_deployment,
+            )
+            vector_store = await InMemoryIncidentVectorStore.build(incidents, azure_openai)
+            code_repository = (
+                GithubCodeRepository(settings.github_repository, settings.github_token)
+                if settings.github_repository and settings.github_token
+                else JsonCodeRepository(settings.data_directory)
+            )
+            service = IncidentManagementService(
+                vector_store=vector_store,
+                advisor=IncidentAdvisor(azure_openai),
+                deployment_agent=DeploymentCheckAgent(
+                    DeploymentHistoryRepository(settings.data_directory)
+                ),
+                code_agent=CodeInvestigationAgent(code_repository),
+                similarity_threshold=settings.similarity_threshold,
+            )
+            request.app.state.incident_service = service
+            request.app.state.historical_incident_count = vector_store.count
+            request.app.state.initialization_status = "ok"
+            logger.info("Historical incident initialization completed")
+            return service
+        except Exception as error:
+            request.app.state.initialization_status = "error"
+            request.app.state.initialization_error = str(error)
+            logger.exception("Historical incident initialization failed")
+            raise HTTPException(status_code=503, detail=str(error)) from error
 
 app = FastAPI(title="Incident Management API", version="1.0.0", lifespan=lifespan)
 

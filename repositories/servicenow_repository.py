@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from domain.models import Incident
+from domain.models import Incident, IncidentAttachment
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -14,9 +14,11 @@ class ServiceNowIncidentRepository:
     """Loads resolved and closed incidents from a ServiceNow instance."""
 
     _FIELDS = (
-        "number,short_description,description,close_notes,close_code,priority,"
+        "sys_id,number,short_description,description,close_notes,close_code,priority,"
         "cmdb_ci,business_service,opened_at,resolved_at"
     )
+    _ATTACHMENT_FIELDS = "sys_id,table_sys_id,file_name,content_type,size_bytes"
+    _MAX_TEXT_ATTACHMENT_BYTES = 100_000
 
     def __init__(self, instance_url: str, username: str, password: str, limit: int = 200) -> None:
         self._instance_url = instance_url.rstrip("/")
@@ -51,12 +53,80 @@ class ServiceNowIncidentRepository:
         except (httpx.HTTPError, ValueError) as error:
             logger.warning("ServiceNow incident request failed: %s", error)
             raise RuntimeError(f"ServiceNow incident history could not be loaded: {error}") from error
-        incidents = [self._to_incident(record) for record in records]
+        attachments_by_incident = self._load_attachments(
+            [_display_value(record.get("sys_id")) for record in records]
+        )
+        incidents = [
+            self._to_incident(
+                record,
+                attachments_by_incident.get(_display_value(record.get("sys_id")), []),
+            )
+            for record in records
+        ]
         logger.info("ServiceNow returned %d incident records", len(incidents))
         return incidents
 
+    def _load_attachments(self, incident_sys_ids: list[str]) -> dict[str, list[IncidentAttachment]]:
+        incident_sys_ids = [sys_id for sys_id in incident_sys_ids if sys_id]
+        if not incident_sys_ids:
+            return {}
+        try:
+            response = httpx.get(
+                f"{self._instance_url}/api/now/table/sys_attachment",
+                auth=self._auth,
+                headers={"Accept": "application/json"},
+                params={
+                    "sysparm_query": f"table_name=incident^table_sys_idIN{','.join(incident_sys_ids)}",
+                    "sysparm_limit": self._limit * 10,
+                    "sysparm_display_value": "false",
+                    "sysparm_exclude_reference_link": "true",
+                    "sysparm_fields": self._ATTACHMENT_FIELDS,
+                },
+                timeout=20.0,
+            )
+            response.raise_for_status()
+            records = response.json().get("result", [])
+        except (httpx.HTTPError, ValueError) as error:
+            raise RuntimeError(f"ServiceNow attachment metadata could not be loaded: {error}") from error
+
+        attachments: dict[str, list[IncidentAttachment]] = {}
+        for record in records:
+            incident_sys_id = _display_value(record.get("table_sys_id"))
+            if not incident_sys_id:
+                continue
+            attachment = IncidentAttachment(
+                id=_display_value(record.get("sys_id")),
+                fileName=_display_value(record.get("file_name")) or "unnamed-attachment",
+                contentType=_display_value(record.get("content_type")) or None,
+                sizeBytes=_integer_value(record.get("size_bytes")),
+                fileContent=self._load_text_attachment_content(record),
+            )
+            attachments.setdefault(incident_sys_id, []).append(attachment)
+        logger.info("ServiceNow returned %d attachment metadata records", len(records))
+        return attachments
+
+    def _load_text_attachment_content(self, record: dict[str, Any]) -> str | None:
+        """Return a bounded UTF-8 excerpt only for plain-text files."""
+        filename = _display_value(record.get("file_name"))
+        attachment_id = _display_value(record.get("sys_id"))
+        if not filename.casefold().endswith(".txt") or not attachment_id:
+            return None
+        try:
+            response = httpx.get(
+                f"{self._instance_url}/api/now/attachment/{attachment_id}/file",
+                auth=self._auth,
+                timeout=20.0,
+            )
+            response.raise_for_status()
+            content = response.content[: self._MAX_TEXT_ATTACHMENT_BYTES]
+            logger.info("Loaded text content for ServiceNow attachment %s", attachment_id)
+            return content.decode("utf-8", errors="replace")
+        except httpx.HTTPError as error:
+            logger.warning("ServiceNow text attachment %s could not be loaded: %s", attachment_id, error)
+            return None
+
     @staticmethod
-    def _to_incident(record: dict[str, Any]) -> Incident:
+    def _to_incident(record: dict[str, Any], attachments: list[IncidentAttachment] | None = None) -> Incident:
         title = _display_value(record.get("short_description")) or "ServiceNow incident"
         description = _display_value(record.get("description"))
         close_notes = _display_value(record.get("close_notes"))
@@ -73,6 +143,7 @@ class ServiceNowIncidentRepository:
             symptoms=description or title,
             rootCause=_display_value(record.get("close_code")) or None,
             resolution=close_notes or None,
+            attachments=attachments or [],
         )
 
 
@@ -86,3 +157,10 @@ def _severity(priority: str) -> str:
     """Keep ServiceNow's priority in a compact, model-friendly form."""
     first = priority.strip()[:1]
     return f"P{first}" if first.isdigit() else (priority or "P3")
+
+
+def _integer_value(value: Any) -> int | None:
+    try:
+        return int(_display_value(value))
+    except ValueError:
+        return None

@@ -64,6 +64,75 @@ def test_servicenow_record_maps_to_historical_incident() -> None:
     assert result.service == "checkout-api"
     assert result.severity == "P2"
     assert result.resolution == "Rolled back the release."
+    assert result.attachments == []
+
+
+def test_servicenow_loads_file_content_only_for_txt_attachments(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Response:
+        def __init__(self, payload: dict | None = None, content: bytes = b"") -> None:
+            self._payload = payload or {}
+            self.content = content
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def json(self) -> dict:
+            return self._payload
+
+    calls: list[str] = []
+
+    def fake_get(url: str, **_kwargs: object) -> Response:
+        calls.append(url)
+        if url.endswith("/sys_attachment"):
+            return Response(
+                {
+                    "result": [
+                        {
+                            "sys_id": "text-file-id",
+                            "table_sys_id": "incident-id",
+                            "file_name": "diagnostics.TXT",
+                            "content_type": "text/plain",
+                            "size_bytes": "18",
+                        },
+                        {
+                            "sys_id": "pdf-file-id",
+                            "table_sys_id": "incident-id",
+                            "file_name": "report.pdf",
+                            "content_type": "application/pdf",
+                            "size_bytes": "42",
+                        },
+                    ]
+                }
+            )
+        assert url.endswith("/attachment/text-file-id/file")
+        return Response(content=b"Connection timed out")
+
+    monkeypatch.setattr("repositories.servicenow_repository.httpx.get", fake_get)
+    repository = ServiceNowIncidentRepository("https://instance.example", "user", "password")
+
+    attachments = repository._load_attachments(["incident-id"])["incident-id"]
+
+    assert [attachment.model_dump(by_alias=True) for attachment in attachments] == [
+        {
+            "id": "text-file-id",
+            "fileName": "diagnostics.TXT",
+            "contentType": "text/plain",
+            "sizeBytes": 18,
+            "fileContent": "Connection timed out",
+        },
+        {
+            "id": "pdf-file-id",
+            "fileName": "report.pdf",
+            "contentType": "application/pdf",
+            "sizeBytes": 42,
+            "fileContent": None,
+        },
+    ]
+    assert calls == [
+        "https://instance.example/api/now/table/sys_attachment",
+        "https://instance.example/api/now/attachment/text-file-id/file",
+    ]
+
 
 async def test_azure_openai_client_parses_embedding_and_chat_responses() -> None:
     client = AzureOpenAIClient(
