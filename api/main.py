@@ -6,6 +6,7 @@ import logging
 from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 
 from agents.deployment_check import DeploymentCheckAgent
 from agents.code_investigation import CodeInvestigationAgent
@@ -104,6 +105,13 @@ async def load_incident_service(request: Request) -> IncidentManagementService:
             raise HTTPException(status_code=503, detail=str(error)) from error
 
 app = FastAPI(title="Incident Management API", version="1.0.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["health"])

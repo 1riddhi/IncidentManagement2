@@ -70,6 +70,8 @@ Both incident endpoints include nested attachment metadata (`id`, `fileName`, `c
 
 Active incident responses include `createdAt` and `updatedAt`. Historical incident responses include `createdAt` and `resolvedAt`. Values are `null` when ServiceNow has not populated the corresponding date.
 
+The API permits cross-origin browser requests from frontend applications. It does not allow browser credentials; configure a specific origin before adding cookie- or browser-session-based authentication.
+
 On Cloud Run, the API opens its port even when an integration is not configured. Check `GET /health`: it returns `status: "error"` with the missing configuration detail; integration-dependent endpoints return `503` until the required settings are supplied. Historical analysis is built on the first analyze request.
 
 Open the API documentation at `http://127.0.0.1:8000/docs`. Send an incident to `POST /api/v1/incidents/analyze` using an `incident` object from `data/new-incident.json`.
