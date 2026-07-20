@@ -38,29 +38,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.servicenow_repository = repository
     app.state.incident_service = None
     app.state.historical_incident_count = 0
-    app.state.initialization_status = "starting"
+    app.state.initialization_status = "ok"
     app.state.initialization_error = None
-    app.state.initialization_task = asyncio.create_task(
-        initialize_incident_service(app, settings, repository),
-        name="incident-management-initialization",
-    )
-    logger.info("Application is listening while ServiceNow history loads in the background")
-    try:
-        yield
-    finally:
-        task: asyncio.Task[None] = app.state.initialization_task
-        if not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                logger.info("Background incident initialization was cancelled during shutdown")
+    app.state.initialization_lock = asyncio.Lock()
+    app.state.settings = settings
+    logger.info("Application started; ServiceNow history will load only when requested")
+    yield
 
 
-async def initialize_incident_service(
-    app: FastAPI, settings: Settings, repository: ServiceNowIncidentRepository
-) -> None:
-    """Load historical evidence without delaying the container's readiness port."""
+async def load_incident_service(request: Request) -> IncidentManagementService:
+    """Build the analysis index only when analysis is first requested."""
+    existing_service: IncidentManagementService | None = request.app.state.incident_service
+    if existing_service is not None:
+        return existing_service
+    async with request.app.state.initialization_lock:
+        existing_service = request.app.state.incident_service
+        if existing_service is not None:
+            return existing_service
+        settings: Settings = request.app.state.settings
+        repository: ServiceNowIncidentRepository = request.app.state.servicenow_repository
+        request.app.state.initialization_status = "starting"
     try:
         incidents = await asyncio.to_thread(repository.load_historical_incidents)
         logger.info("Loaded %d resolved/closed incidents from ServiceNow into the historical index", len(incidents))
@@ -77,7 +74,7 @@ async def initialize_incident_service(
             if settings.github_repository and settings.github_token
             else JsonCodeRepository(settings.data_directory)
         )
-        app.state.incident_service = IncidentManagementService(
+        service = IncidentManagementService(
             vector_store=vector_store,
             advisor=IncidentAdvisor(azure_openai),
             deployment_agent=DeploymentCheckAgent(
@@ -86,24 +83,19 @@ async def initialize_incident_service(
             code_agent=CodeInvestigationAgent(code_repository),
             similarity_threshold=settings.similarity_threshold,
         )
-        app.state.historical_incident_count = vector_store.count
-        app.state.initialization_status = "ok"
+        request.app.state.incident_service = service
+        request.app.state.historical_incident_count = vector_store.count
+        request.app.state.initialization_status = "ok"
         logger.info("Historical incident initialization completed")
+        return service
     except Exception as error:
-        app.state.initialization_status = "error"
-        app.state.initialization_error = str(error)
+        request.app.state.initialization_status = "error"
+        request.app.state.initialization_error = str(error)
         logger.exception("Historical incident initialization failed")
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 app = FastAPI(title="Incident Management API", version="1.0.0", lifespan=lifespan)
 
-
-def service_from(request: Request) -> IncidentManagementService:
-    service: IncidentManagementService | None = request.app.state.incident_service
-    if service is None:
-        status = request.app.state.initialization_status
-        detail = request.app.state.initialization_error or "Historical incident data is still loading."
-        raise HTTPException(status_code=503, detail={"status": status, "message": detail})
-    return service
 
 @app.get("/health", response_model=HealthResponse, tags=["health"])
 async def health(request: Request) -> HealthResponse:
@@ -116,11 +108,16 @@ async def health(request: Request) -> HealthResponse:
 
 @app.get("/api/v1/incidents/historical", response_model=list[Incident], tags=["incidents"])
 async def historical_incidents(request: Request) -> list[Incident]:
-    """Show resolved and closed incidents imported from ServiceNow at startup."""
-    logger.info("Historical incidents endpoint requested")
-    incidents = service_from(request).historical_incidents()
-    logger.info("Historical incidents endpoint returned %d records", len(incidents))
-    return incidents
+    """Fetch the current resolved and closed incidents from ServiceNow."""
+    repository: ServiceNowIncidentRepository = request.app.state.servicenow_repository
+    logger.info("Historical incidents endpoint requested; fetching records from ServiceNow")
+    try:
+        incidents = await asyncio.to_thread(repository.load_historical_incidents)
+        logger.info("Historical incidents endpoint returned %d records", len(incidents))
+        return incidents
+    except RuntimeError as error:
+        logger.warning("Historical incidents endpoint could not load ServiceNow records: %s", error)
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @app.get("/api/v1/incidents/active", response_model=list[Incident], tags=["incidents"])
@@ -129,7 +126,7 @@ async def active_incidents(request: Request) -> list[Incident]:
     repository: ServiceNowIncidentRepository = request.app.state.servicenow_repository
     logger.info("Active incidents endpoint requested; fetching current records from ServiceNow")
     try:
-        incidents = repository.load_active_incidents()
+        incidents = await asyncio.to_thread(repository.load_active_incidents)
         logger.info("Active incidents endpoint returned %d records", len(incidents))
         return incidents
     except RuntimeError as error:
@@ -140,6 +137,7 @@ async def active_incidents(request: Request) -> list[Incident]:
 @app.post("/api/v1/incidents/analyze", response_model=IncidentAnalysis, tags=["incidents"])
 async def analyze_incident(payload: AnalyzeRequest, request: Request) -> IncidentAnalysis:
     try:
-        return await service_from(request).analyze(payload.incident, payload.limit)
+        service = await load_incident_service(request)
+        return await service.analyze(payload.incident, payload.limit)
     except (RuntimeError, ValueError) as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
