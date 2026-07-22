@@ -93,8 +93,7 @@ async def load_incident_service(request: Request) -> IncidentManagementService:
                 deployment_agent=DeploymentCheckAgent(
                     DeploymentHistoryRepository(settings.data_directory)
                 ),
-                code_agent=CodeInvestigationAgent(code_repository),
-                similarity_threshold=settings.similarity_threshold,
+                code_agent=CodeInvestigationAgent(),
             )
             request.app.state.incident_service = service
             request.app.state.historical_incident_count = vector_store.count
