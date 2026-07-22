@@ -3,6 +3,7 @@ pyproject.toml
 agents/__init__.py
 agents/code_investigation.py
 agents/deployment_check.py
+agents/rca_graph.py
 api/__init__.py
 api/main.py
 core/__init__.py
@@ -20,8 +21,11 @@ repositories/json_repository.py
 repositories/servicenow_repository.py
 services/__init__.py
 services/advisor.py
+services/analysis_sessions.py
 services/azure_openai.py
 services/incident_management.py
 tests/test_incident_management.py
 vector/__init__.py
+vector/azure_ai_search_store.py
 vector/in_memory_store.py
+vector/store.py

@@ -11,16 +11,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from agents.deployment_check import DeploymentCheckAgent
 from agents.code_investigation import CodeInvestigationAgent
 from core.config import Settings
-from domain.models import AnalyzeRequest, HealthResponse, Incident, IncidentAnalysis
+from domain.models import AnalysisChatRequest, AnalysisChatResponse, AnalyzeRequest, HealthResponse, Incident, IncidentAnalysis
 from repositories.json_repository import DeploymentHistoryRepository
 from repositories.servicenow_repository import ServiceNowIncidentRepository
 from repositories.code_repository import GithubCodeRepository, JsonCodeRepository
 from services.advisor import IncidentAdvisor
+from services.analysis_sessions import AnalysisChatService, AnalysisSessionStore, IncidentToolRegistry
 from services.incident_management import IncidentManagementService
 from services.azure_openai import AzureOpenAIClient
 from vector.in_memory_store import InMemoryIncidentVectorStore
 
 logger = logging.getLogger("uvicorn.error")
+from vector.azure_ai_search_store import AzureAISearchIncidentStore
+from vector.store import IncidentStore
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -171,6 +174,26 @@ async def active_incidents(request: Request) -> list[Incident]:
 async def analyze_incident(payload: AnalyzeRequest, request: Request) -> IncidentAnalysis:
     try:
         service = await load_incident_service(request)
-        return await service.analyze(payload.incident, payload.limit)
+        analysis = await service.analyze(payload.incident, payload.limit)
+        analysis.analysis_id = await request.app.state.analysis_sessions.create(analysis)
+        return analysis
     except (RuntimeError, ValueError) as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.post("/api/v1/analysis-sessions/{analysis_id}/chat", response_model=AnalysisChatResponse, tags=["analysis sessions"])
+async def chat(analysis_id: str, payload: AnalysisChatRequest, request: Request) -> AnalysisChatResponse:
+    try:
+        response = await request.app.state.analysis_chat_service.chat(analysis_id, payload.message)
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    if response is None:
+        raise HTTPException(status_code=404, detail="Analysis session was not found or has expired.")
+    return response
+
+
+@app.delete("/api/v1/analysis-sessions/{analysis_id}", status_code=204, tags=["analysis sessions"])
+async def end_chat(analysis_id: str, request: Request) -> None:
+    deleted = await request.app.state.analysis_sessions.delete(analysis_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Analysis session was not found or has expired.")
