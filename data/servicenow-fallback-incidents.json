@@ -26,8 +26,7 @@
       "logs": "2026-07-17T10:15:27.151Z ERROR transaction-validation-service request_id=REQ-1003 payment_id=PAY-482912 error_code=VALIDATION_FAILED Final validation attempt failed; Received null",
       "attachments": []
     },
-    [
-      {
+    {
         "id": "INC-TEST-9002",
         "title": "Payment validation fails when evaluating the sanctions decision",
         "service": "transaction-validation-service",
@@ -53,7 +52,6 @@
         "logs": "ERROR IndexOutOfBoundsException at RuleResponseMapper.java:42",
         "attachments": []
       }
-    ]
   ],
   "historical": [
     {

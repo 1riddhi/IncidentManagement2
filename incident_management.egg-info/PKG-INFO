@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: incident-management
 Version: 1.0.0
-Summary: FastAPI service for incident similarity analysis and operational guidance.
+Summary: FastAPI service for active and historical ServiceNow incidents.
 Requires-Python: >=3.11
 Requires-Dist: fastapi<1.0,>=0.115
 Requires-Dist: httpx<1.0,>=0.27

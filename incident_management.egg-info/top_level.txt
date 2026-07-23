@@ -1,7 +1,4 @@
-agents
 api
 core
 domain
 repositories
-services
-vector
