@@ -25,7 +25,35 @@
       "resolution": null,
       "logs": "2026-07-17T10:15:27.151Z ERROR transaction-validation-service request_id=REQ-1003 payment_id=PAY-482912 error_code=VALIDATION_FAILED Final validation attempt failed; Received null",
       "attachments": []
-    }
+    },
+    [
+      {
+        "id": "INC-TEST-9002",
+        "title": "Payment validation fails when evaluating the sanctions decision",
+        "service": "transaction-validation-service",
+        "severity": "SEV-1",
+        "symptoms": "Card payments and bank transfers remain pending because validation workers fail with an index-out-of-range error during risk-decision processing.",
+        "createdAt": "2026-07-23 09:00:00",
+        "updatedAt": "2026-07-23 09:15:00",
+        "rootCause": null,
+        "resolution": null,
+        "logs": null,
+        "attachments": []
+      },
+      {
+        "id": "INC-NEW-01",
+        "title": "Payment validation failures",
+        "service": "transaction-validation-service",
+        "severity": "SEV-1",
+        "symptoms": "Payments fail for some sanctions-rule responses",
+        "createdAt": "2026-07-23 09:00:00",
+        "updatedAt": "2026-07-23 09:15:00",
+        "rootCause": null,
+        "resolution": null,
+        "logs": "ERROR IndexOutOfBoundsException at RuleResponseMapper.java:42",
+        "attachments": []
+      }
+    ]
   ],
   "historical": [
     {
